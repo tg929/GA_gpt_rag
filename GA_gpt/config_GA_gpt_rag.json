@@ -1,12 +1,12 @@
 {
   "paths": {
-    "project_root": "/data2/ytg/paper-ieee/GA_gpt_rag",
-    "mgltools_path": "GA_gpt/mgltools_x86_64Linux2_1.5.6"
+    "project_root": "/data2/ytg/paper-ieee/GA_gpt_rag"
+    
   },
   "workflow": {
     "output_directory": "GA_GPT_output_rag",
     "max_generations": 5,
-    "initial_population_file": "datasets/source_compounds/my_initial_population.smi"
+    "initial_population_file": "datasets/source_compounds/my_initial_population_200.smi"
   },
   "gpt": {
     "seed": 42,
@@ -126,7 +126,7 @@
     "description": "分子对接参数配置 - 使用QVina2进行对接",
     "dock_choice": "QVinaDocking",
     "conversion_choice": "MGLToolsConversion",
-    "docking_exhaustiveness": 1,
+    "docking_exhaustiveness": 3,
     "docking_num_modes": 10,
     "number_of_processors": null,
     "max_variants_per_compound": 3,
@@ -185,15 +185,23 @@
     "enable_nih": false,
     "enable_brenk": false,
     "no_filters": false,
-    "alternative_filters": null,
-    "target_diversity": 0.7,
-    "target_exploitation": 0.3
+    "alternative_filters": null
   },
   "performance": {
-    "parallel_processing": false,
+    "parallel_processing": true,
     "max_workers": -1,
     "number_of_processors": -1,
     "cleanup_intermediate_files": false
+  }
+  ,
+  "_unused": {
+    "paths": {
+      "mgltools_path": "GA_gpt/mgltools_x86_64Linux2_1.5.6"
+    },
+    "filter": {
+      "target_diversity": 0.7,
+      "target_exploitation": 0.3
+    }
   }
 }
 
