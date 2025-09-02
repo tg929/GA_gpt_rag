@@ -111,6 +111,8 @@ def main():
                         help="Path to the SMILES file of the initial population (for novelty calculation).")
     parser.add_argument("--output_file", type=str, required=True,
                         help="Path to the output file to save calculated metrics (e.g., results.txt or results.csv).")
+    parser.add_argument("--config_file", type=str, default=None,
+                        help="Optional JSON config to read RAG normalization (selection.rag_score_settings.normalization).")
     
     args = parser.parse_args()
     print(f"Processing population file: {args.current_population_docked_file}")
@@ -127,6 +129,23 @@ def main():
     else:
         sorted_smiles = current_smiles_list # 如果没有分数，则使用原始顺序
         
+    # 0. 可选：读取 RAG 归一化配置
+    norm = { 'ds_clip_min': -20.0, 'ds_clip_max': 0.0, 'sa_max_value': 10.0, 'sa_denominator': 9.0 }
+    if args.config_file and os.path.exists(args.config_file):
+        try:
+            import json
+            with open(args.config_file, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            _s = cfg.get('selection', {}).get('rag_score_settings', {}).get('normalization', {})
+            norm.update({
+                'ds_clip_min': _s.get('ds_clip_min', norm['ds_clip_min']),
+                'ds_clip_max': _s.get('ds_clip_max', norm['ds_clip_max']),
+                'sa_max_value': _s.get('sa_max_value', norm['sa_max_value']),
+                'sa_denominator': _s.get('sa_denominator', norm['sa_denominator']),
+            })
+        except Exception:
+            pass
+
     # 1. Docking Score Metrics
     top1_score, top10_mean_score, top100_mean_score = calculate_docking_stats(docking_scores)
     
@@ -148,6 +167,67 @@ def main():
     mean_qed = np.mean(qed_scores) if qed_scores else np.nan
     mean_sa = np.mean(sa_scores) if sa_scores else np.nan
 
+    # 5. 计算 y = DS_hat * QED * SA_hat 统计（针对“当前群体”文件）
+    # 5.1 先为当前群体的所有分子构建 SMILES->DS 字典（若缺 DS 则 y 无法计算）
+    smiles_to_ds = {}
+    with open(args.current_population_docked_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                try:
+                    smiles_to_ds[parts[0]] = float(parts[1])
+                except Exception:
+                    continue
+
+    # 5.2 定义归一化函数
+    def _ds_hat(x: float) -> float:
+        x = max(float(norm['ds_clip_min']), min(float(norm['ds_clip_max']), x))
+        return -x / 20.0
+    def _sa_hat(x: float) -> float:
+        return max(0.0, min(1.0, (float(norm['sa_max_value']) - x) / float(norm['sa_denominator'])))
+
+    # 5.3 计算“当前群体全体”的 y 统计
+    # 为避免再次批量算性质，这里仅在对接输出含 QED/SA 时可直接读取；否则针对 Top-100 计算一个子集统计
+    y_all = []
+    ds_all = []
+    # 如果当前文件已包含 QED/SA（我们刚在对接阶段新增了列），可直接解析列 3、4、5
+    try:
+        with open(args.current_population_docked_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 5:
+                    try:
+                        smi = parts[0]
+                        ds = float(parts[1])
+                        qed_v = float(parts[2]) if parts[2] != 'NA' else None
+                        sa_v = float(parts[3]) if parts[3] != 'NA' else None
+                        # 第五列可能是 RAG_Y，若没有则计算
+                        if parts[4] != 'NA':
+                            y_val = float(parts[4])
+                        else:
+                            y_val = None
+                        if y_val is None and (qed_v is not None and sa_v is not None):
+                            y_val = _ds_hat(ds) * float(qed_v) * _sa_hat(float(sa_v))
+                        if y_val is not None:
+                            y_all.append(y_val)
+                        ds_all.append(ds)
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+
+    # 若当前文件没有附带 QED/SA，则退化为针对 Top-100 估计 y（使用上面已计算的 qed_scores/sa_scores 和对应的 DS）
+    y_top = []
+    if not y_all and smiles_for_scoring:
+        for smi, qed_v, sa_v in zip(smiles_for_scoring, qed_scores, sa_scores):
+            ds = smiles_to_ds.get(smi, None)
+            if ds is None:
+                continue
+            try:
+                y_top.append(_ds_hat(ds) * float(qed_v) * _sa_hat(float(sa_v)))
+            except Exception:
+                continue
+
     # 安全地处理可能包含特殊字符的文件名
     population_filename = os.path.basename(args.current_population_docked_file)
     initial_population_filename = os.path.basename(args.initial_population_file)    
@@ -158,6 +238,18 @@ def main():
     results += "Valid RDKit molecules for properties: {}\n".format(len(sorted_smiles))
     results += "Molecules with docking scores: {}\n".format(len(docking_scores))
     results += "--------------------------------------------------\n"    
+    # y 分数统计输出
+    if y_all:
+        results += "RAG-Y (All) count={}: mean={:.6f}, max={:.6f}, min={:.6f}\n".format(
+            len(y_all), float(np.mean(y_all)), float(np.max(y_all)), float(np.min(y_all))
+        )
+    if y_top:
+        results += "RAG-Y (Top 100 subset) count={}: mean={:.6f}, max={:.6f}, min={:.6f}\n".format(
+            len(y_top), float(np.mean(y_top)), float(np.max(y_top)), float(np.min(y_top))
+        )
+    if ds_all:
+        results += "DS (All) mean={:.6f}, best(min)={:.6f}\n".format(float(np.mean(ds_all)), float(np.min(ds_all)))
+    results += "--------------------------------------------------\n"
     # 处理浮点数格式化，注意处理NaN情况
     if np.isnan(top1_score): #top1
         results += "Docking Score - Top 1: N/A\n"
