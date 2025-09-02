@@ -47,6 +47,38 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # 导入CPU检测工具
 from utils.cpu_utils import get_available_cpu_cores
 
+# ---- QED/SA 评分依赖与回退导入 ----
+from rdkit import Chem  # type: ignore
+from rdkit.Chem import QED  # type: ignore
+import sys as _sys
+_SCORING_DIR = str(PROJECT_ROOT / 'operations' / 'scoring')
+if _SCORING_DIR not in _sys.path:
+    _sys.path.insert(0, _SCORING_DIR)
+_calc_sa = None
+try:
+    from sascorer import calculateScore as _calc_sa  # type: ignore
+except Exception:
+    _ALT_SCORING_DIR = str(PROJECT_ROOT / 'fragment_GPT' / 'utils')
+    if _ALT_SCORING_DIR not in _sys.path:
+        _sys.path.insert(0, _ALT_SCORING_DIR)
+    try:
+        from sascorer import calculateScore as _calc_sa  # type: ignore
+    except Exception:
+        _calc_sa = None
+
+
+def _normalize_ds(ds: float, clip_min: float = -20.0, clip_max: float = 0.0) -> float:
+    if ds < clip_min:
+        ds = clip_min
+    if ds > clip_max:
+        ds = clip_max
+    return -ds / 20.0
+
+
+def _normalize_sa(sa: float, sa_max_value: float = 10.0, sa_denominator: float = 9.0) -> float:
+    # SA 约在 [1,10]，映射到 [0,1]
+    return max(0.0, min(1.0, (sa_max_value - sa) / sa_denominator))
+
 def vina_dock_single(ligand_file, receptor_pdbqt, results_dir, vars):
     """ 单个分子的对接函数，静默忽略失败分子。"""    
     out_file = os.path.join(results_dir, os.path.basename(ligand_file).replace(".pdbqt", "_out.pdbqt"))
@@ -166,8 +198,9 @@ def keep_best_docking_results(results_dir):
                 except OSError as e:
                     print(f"删除文件失败: {file_path}, 错误: {e}")
 
-def output_smiles_scores(smiles_file, scores_dict, output_file):
-    """将成功对接的结果写入文件,按对接分数排序（分数越低越好排在前面）,不包含头,不记录NA值。"""
+def output_smiles_scores(smiles_file, scores_dict, output_file, *, add_metrics: bool = True, normalization: Optional[Dict] = None):
+    """将成功对接的结果写入文件,按对接分数排序（分数越低越好排在前面）,不包含头,不记录NA值。
+    当 add_metrics=True 时，额外追加三列: QED, SA, RAG_Y（与选择阶段一致的归一化方式）。"""
     # 读取SMILES与分子名映射
     smiles_map = {}
     with open(smiles_file, "r") as f:
@@ -193,9 +226,50 @@ def output_smiles_scores(smiles_file, scores_dict, output_file):
     
     # 写入排序后的结果
     with open(output_file, "w") as out:
-        for smiles, score in valid_molecules:
-            out.write(f"{smiles}\t{score}\n")
-    
+        if not add_metrics:
+            for smiles, score in valid_molecules:
+                out.write(f"{smiles}\t{score}\n")
+        else:
+            # 归一化参数（与 selecting_rag_score.py 保持一致的默认值）
+            norm = normalization or {}
+            ds_clip_min = float(norm.get('ds_clip_min', -20.0))
+            ds_clip_max = float(norm.get('ds_clip_max', 0.0))
+            sa_max_value = float(norm.get('sa_max_value', 10.0))
+            sa_denominator = float(norm.get('sa_denominator', 9.0))
+
+            for smiles, score in valid_molecules:
+                # 计算 QED/SA
+                try:
+                    mol = Chem.MolFromSmiles(smiles)
+                except Exception:
+                    mol = None
+                qed_val = None
+                sa_val = None
+                if mol is not None:
+                    try:
+                        qed_val = float(QED.qed(mol))
+                    except Exception:
+                        qed_val = None
+                    try:
+                        sa_val = float(_calc_sa(mol)) if _calc_sa else None
+                    except Exception:
+                        sa_val = None
+
+                # 计算 RAG_Y（若 QED/SA 可用）
+                if qed_val is not None and sa_val is not None:
+                    ds_hat = _normalize_ds(float(score), ds_clip_min, ds_clip_max)
+                    sa_hat = _normalize_sa(float(sa_val), sa_max_value, sa_denominator)
+                    rag_y = float(ds_hat) * float(qed_val) * float(sa_hat)
+                else:
+                    rag_y = None
+
+                def _fmt(x):
+                    return f"{x:.6f}" if isinstance(x, (int, float)) else "NA"
+
+                out.write(
+                    f"{smiles}\t{score}\t{_fmt(qed_val)}\t{_fmt(sa_val)}\t{_fmt(rag_y)}\n"
+                )
+
     print(f"已将 {len(valid_molecules)} 个有效分子按对接分数排序写入 {output_file}")
 
 class DockingWorkflow:
@@ -231,6 +305,10 @@ class DockingWorkflow:
         # 获取对接配置部分
         docking_config = config.get('docking', {})
         performance_config = config.get('performance', {})
+        # 读取 RAG 归一化参数（若存在）
+        selection_cfg = config.get('selection', {})
+        rag_settings = selection_cfg.get('rag_score_settings', {})
+        rag_norm = rag_settings.get('normalization', {})
 
         def resolve_path(key):
             """如果路径是相对路径,则解析为基于项目根目录的绝对路径"""
@@ -265,6 +343,13 @@ class DockingWorkflow:
             'prepare_ligand4.py': resolve_path('prepare_ligand4.py'),
             'docking_executable': resolve_path('docking_executable'),
             'timeout_vs_gtimeout': docking_config.get('timeout_vs_gtimeout', 'timeout'),
+            # RAG 归一化参数（用于在对接输出时计算 RAG_Y）
+            'rag_normalization': {
+                'ds_clip_min': rag_norm.get('ds_clip_min', -20.0),
+                'ds_clip_max': rag_norm.get('ds_clip_max', 0.0),
+                'sa_max_value': rag_norm.get('sa_max_value', 10.0),
+                'sa_denominator': rag_norm.get('sa_denominator', 9.0),
+            },
         }
         
     def _setup_generation_dirs(self):
@@ -480,7 +565,13 @@ class DockingWorkflow:
         # 写出分数字典
         final_scores_file = os.path.join(results_dir, "final_scored.smi")
         try:
-            output_smiles_scores(self.vars["ligands"], scores, final_scores_file)
+            output_smiles_scores(
+                self.vars["ligands"],
+                scores,
+                final_scores_file,
+                add_metrics=True,
+                normalization=self.vars.get('rag_normalization')
+            )
         except Exception as e:
             logger.warning(f"写出最终分数失败: {e}")
         return final_scores_file
