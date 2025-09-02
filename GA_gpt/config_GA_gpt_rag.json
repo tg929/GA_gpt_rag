@@ -5,8 +5,8 @@
   },
   "workflow": {
     "output_directory": "GA_GPT_output_rag",
-    "max_generations": 5,
-    "initial_population_file": "datasets/source_compounds/my_initial_population_200.smi"
+    "max_generations": 10,
+    "initial_population_file": "datasets/source_compounds/naphthalene_smiles.smi"
   },
   "gpt": {
     "seed": 42,
