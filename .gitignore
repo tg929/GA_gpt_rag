@@ -1,0 +1,12 @@
+output_*
+mgltools_x86_64Linux2_1.5.6/*
+fragment_GPT/output/*
+autogrow/*
+mcts_*
+run_mcts*
+*.ipynb
+*.pyc
+*.pdbqtqt
+*.pt
+fragment_GPT/*
+.git_bak*/*
