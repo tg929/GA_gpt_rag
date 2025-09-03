@@ -63,6 +63,17 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
         self._save_run_parameters()        
         logger.info(f"GA-GPT工作流初始化完成, 输出目录: {self.output_dir}")
         logger.info(f"最大迭代代数: {self.max_generations}")
+        # 设置可见GPU（如配置提供 gpt.visible_devices），便于屏蔽异常GPU
+        try:
+            gpt_cfg = self.config.get('gpt', {})
+            visible_devices = gpt_cfg.get('visible_devices')
+            if visible_devices:
+                if isinstance(visible_devices, (list, tuple)):
+                    visible_devices = ','.join(str(x) for x in visible_devices)
+                os.environ['CUDA_VISIBLE_DEVICES'] = str(visible_devices)
+                logger.info(f"已设置 CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        except Exception as _e:
+            logger.warning(f"设置CUDA_VISIBLE_DEVICES失败: {_e}")
         
         # 资源跟踪
         self._temp_files: Set[str] = set()
@@ -517,6 +528,16 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
             '--seed', str(seed),
             '--output_file', str(gpt_generated_file)  # 直接传递输出路径
         ]
+        # 传入配置文件以便 generate_all.py 读取 gpt.device 等参数
+        if self.config_path:
+            gpt_args.extend(['--config_file', self.config_path])
+        # 若配置中提供了显式设备ID,则传入 --device
+        try:
+            gpt_device = self.config.get('gpt', {}).get('device', None)
+            if gpt_device is not None and str(gpt_device) != '':
+                gpt_args.extend(['--device', str(gpt_device)])
+        except Exception:
+            pass
 
         if not self._run_script('fragment_GPT/generate_all.py', gpt_args):
             logger.error(f"第 {generation} 代: GPT生成脚本执行失败。")
