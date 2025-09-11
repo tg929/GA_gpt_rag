@@ -1183,40 +1183,39 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
             gen_dir = self.output_dir / f"generation_{generation_num}"
             if not gen_dir.exists():
                 return
-                
-            # 清理对接过程中产生的临时文件夹
-            temp_dirs_to_clean = [
-                gen_dir / "ligands",
-                gen_dir / "ligands3D_SDFs", 
-                gen_dir / "ligands3D_PDBs",
-                gen_dir / "docking_results" / "ligands",
-                gen_dir / "docking_results" / "ligands3D_SDFs",
-                gen_dir / "gpt_generated" / "docking_files"
+
+            # 1) 清理 docking_results 下除 final_scored.smi 之外的文件与所有子目录
+            docking_dir = gen_dir / "docking_results"
+            if docking_dir.exists():
+                for entry in docking_dir.iterdir():
+                    try:
+                        if entry.is_file():
+                            if entry.name != "final_scored.smi":
+                                entry.unlink()
+                                logger.debug(f"已删除对接文件: {entry}")
+                        else:
+                            shutil.rmtree(entry, ignore_errors=True)
+                            logger.debug(f"已删除对接子目录: {entry}")
+                    except Exception as _e:
+                        logger.debug(f"删除 {entry} 失败: {_e}")
+
+            # 2) 删除对接过程中的中间类型转换目录（只删除这三类，其他不动）
+            specific_dirs = [
+                gen_dir / "ligands_PDB",
+                gen_dir / "ligands3D_SDFs_PDB",
+                gen_dir / "ligandsgypsum_submission_files",
             ]
-            
-            for temp_dir in temp_dirs_to_clean:
-                if temp_dir.exists():
-                    shutil.rmtree(temp_dir)
-                    logger.debug(f"已清理临时目录: {temp_dir}")
-            
-            # 清理大型中间文件（但保留重要的结果文件）
-            temp_files_to_clean = [
-                gen_dir / "ga_input_pool.smi",
-                gen_dir / "crossover_raw.smi", 
-                gen_dir / "mutation_raw.smi",
-                gen_dir / "offspring_combined_raw.smi",
-                gen_dir / "offspring_formatted_for_docking.smi"
-            ]
-            
-            for temp_file in temp_files_to_clean:
-                if temp_file.exists():
-                    temp_file.unlink()
-                    logger.debug(f"已清理临时文件: {temp_file}")
-                    
-            logger.info(f"第 {generation_num} 代临时文件清理完成")
-            
+            for d in specific_dirs:
+                if d.exists():
+                    shutil.rmtree(d, ignore_errors=True)
+                    logger.debug(f"已清理目录: {d}")
+
+            # 3) gpt_generated 目录不清理；其余文件不删除
+
+            logger.info(f"第 {generation_num} 代按规则完成清理（保留 final_scored.smi 与 gpt_generated）")
+
         except Exception as e:
-            logger.warning(f"清理第 {generation_num} 代临时文件时出错: {e}")
+            logger.warning(f"清理第 {generation_num} 代中间文件时出错: {e}")
 
     def _get_processor_count(self) -> int:
         """

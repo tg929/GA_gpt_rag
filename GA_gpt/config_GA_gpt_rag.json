@@ -196,7 +196,7 @@
     "parallel_processing": true,
     "max_workers": -1,
     "number_of_processors": -1,
-    "cleanup_intermediate_files": false
+    "cleanup_intermediate_files": true
   }
   ,
   "_unused": {
