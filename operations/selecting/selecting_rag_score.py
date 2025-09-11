@@ -251,9 +251,27 @@ def main():
     # Apply optional novelty/quality filters
     enriched = apply_optional_filters(enriched, cfg)
 
-    # Sort by y desc
-    enriched.sort(key=lambda d: d['rag_y'], reverse=True)
-    selected = enriched[:n_select] if n_select > 0 else enriched
+    # --- Docking-score elitism (optional) ---
+    # Keep top-k by docking score (lower is better), then fill the rest by RAG-Y
+    elitism_cfg = settings.get('elitism', {})
+    enable_elitism = bool(elitism_cfg.get('enable', True))
+    dock_top_k = int(elitism_cfg.get('dock_top_k', 0))
+
+    elites: List[Dict] = []
+    selected: List[Dict] = []
+    remaining: List[Dict] = enriched
+
+    if enable_elitism and dock_top_k > 0 and enriched:
+        # Sort by DS ascending (smaller is better)
+        ds_sorted = sorted(enriched, key=lambda d: d['docking_score'])
+        elites = ds_sorted[:min(dock_top_k, len(ds_sorted))]
+        elite_smiles = set(m['smiles'] for m in elites)
+        # Remove elites from pool for RAG ranking
+        remaining = [m for m in enriched if m['smiles'] not in elite_smiles]
+
+    # Sort remaining by RAG-Y desc to fill up to n_select
+    remaining.sort(key=lambda d: d['rag_y'], reverse=True)
+    selected = elites + (remaining[:max(0, n_select - len(elites))] if n_select > 0 else remaining)
 
     os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
     with open(args.output_file, 'w', encoding='utf-8') as f:
@@ -284,5 +302,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 

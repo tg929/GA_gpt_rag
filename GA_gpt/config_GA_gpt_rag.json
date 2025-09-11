@@ -6,7 +6,7 @@
   "workflow": {
     "output_directory": "GA_GPT_output_rag",
     "max_generations": 10,
-    "initial_population_file": "datasets/source_compounds/naphthalene_smiles.smi"
+    "initial_population_file": "datasets/source_compounds/my_initial_population.smi"
   },
   "gpt": {
     "seed": 42,
@@ -37,6 +37,10 @@
         "ds_clip_max": 0.0,
         "sa_max_value": 10.0,
         "sa_denominator": 9.0
+      },
+      "elitism": {
+        "enable": true,
+        "dock_top_k": 5
       },
       "novelty_filter": {
         "enable": false,
@@ -152,7 +156,7 @@
     }
   },
   "crossover_finetune": {
-    "crossover_attempts": 100,
+    "crossover_attempts": 50,
     "crossover_rate": 0.8,
     "min_atom_match_mcs": 4,
     "max_time_mcs_prescreen": 1,
@@ -165,7 +169,7 @@
     "merge_attempts": 3
   },
   "mutation_finetune": {
-    "mutation_attempts": 100,
+    "mutation_attempts": 50,
     "max_mutations_per_parent": 2,
     "rxn_library": "all_rxns",
     "max_attempts_multiplier": 50,
@@ -205,5 +209,4 @@
     }
   }
 }
-
 

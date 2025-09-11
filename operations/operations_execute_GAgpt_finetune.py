@@ -613,6 +613,49 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
             logger.error(f"第 {generation} 代: 交叉操作失败。")
             return None
 
+        # 顶补交叉结果以确保去重后达到目标数量（例如50）
+        try:
+            target_cross = int(self.config.get('crossover_finetune', {}).get('crossover_attempts', 50))
+        except Exception:
+            target_cross = 50
+        cross_count = self._count_molecules(str(crossover_filtered_file))
+        if cross_count < target_cross:
+            logger.info(f"第 {generation} 代: 交叉结果去重后 {cross_count} < 目标 {target_cross}，开始顶补...")
+            max_rounds = 5
+            for ridx in range(1, max_rounds + 1):
+                tmp_raw = gen_dir / f"crossover_raw_topup_{ridx}.smi"
+                tmp_filtered = gen_dir / f"crossover_filtered_topup_{ridx}.smi"
+                if not self._execute_ga_stage(
+                    "交叉(顶补)", 'operations/crossover/crossover_demo_finetune.py',
+                    str(ga_input_pool_file), str(tmp_raw), str(tmp_filtered)
+                ):
+                    logger.warning(f"第 {generation} 代: 交叉顶补第{ridx}轮失败，继续尝试下一轮。")
+                    continue
+                # 合并去重
+                try:
+                    seen = set()
+                    merged = []
+                    for path in [crossover_filtered_file, tmp_filtered]:
+                        with open(path, 'r') as f:
+                            for line in f:
+                                s = line.strip()
+                                if not s:
+                                    continue
+                                if s not in seen:
+                                    seen.add(s)
+                                    merged.append(s)
+                    # 截断到目标数量
+                    if len(merged) > target_cross:
+                        merged = merged[:target_cross]
+                    with open(crossover_filtered_file, 'w') as f:
+                        f.write("\n".join(merged) + ("\n" if merged else ""))
+                except Exception as _e:
+                    logger.warning(f"交叉顶补合并失败: {_e}")
+                cross_count = self._count_molecules(str(crossover_filtered_file))
+                logger.info(f"第 {generation} 代: 顶补后交叉分子数={cross_count}")
+                if cross_count >= target_cross:
+                    break
+
         # 执行变异操作
         logger.info(f"第 {generation} 代: 开始变异操作...")
         mutation_success = self._execute_ga_stage(
@@ -623,6 +666,49 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
         if not mutation_success:
             logger.error(f"第 {generation} 代: 变异操作失败。")
             return None
+
+        # 顶补变异结果以确保去重后达到目标数量（例如50）
+        try:
+            target_mut = int(self.config.get('mutation_finetune', {}).get('mutation_attempts', 50))
+        except Exception:
+            target_mut = 50
+        mut_count = self._count_molecules(str(mutation_filtered_file))
+        if mut_count < target_mut:
+            logger.info(f"第 {generation} 代: 变异结果去重后 {mut_count} < 目标 {target_mut}，开始顶补...")
+            max_rounds = 5
+            for ridx in range(1, max_rounds + 1):
+                tmp_raw = gen_dir / f"mutation_raw_topup_{ridx}.smi"
+                tmp_filtered = gen_dir / f"mutation_filtered_topup_{ridx}.smi"
+                if not self._execute_ga_stage(
+                    "变异(顶补)", 'operations/mutation/mutation_demo_finetune.py',
+                    str(ga_input_pool_file), str(tmp_raw), str(tmp_filtered)
+                ):
+                    logger.warning(f"第 {generation} 代: 变异顶补第{ridx}轮失败，继续尝试下一轮。")
+                    continue
+                # 合并去重
+                try:
+                    seen = set()
+                    merged = []
+                    for path in [mutation_filtered_file, tmp_filtered]:
+                        with open(path, 'r') as f:
+                            for line in f:
+                                s = line.strip()
+                                if not s:
+                                    continue
+                                if s not in seen:
+                                    seen.add(s)
+                                    merged.append(s)
+                    # 截断到目标数量
+                    if len(merged) > target_mut:
+                        merged = merged[:target_mut]
+                    with open(mutation_filtered_file, 'w') as f:
+                        f.write("\n".join(merged) + ("\n" if merged else ""))
+                except Exception as _e:
+                    logger.warning(f"变异顶补合并失败: {_e}")
+                mut_count = self._count_molecules(str(mutation_filtered_file))
+                logger.info(f"第 {generation} 代: 顶补后变异分子数={mut_count}")
+                if mut_count >= target_mut:
+                    break
 
         logger.info(f"第 {generation} 代: 交叉和变异操作串行完成。")
         return str(crossover_filtered_file), str(mutation_filtered_file)
@@ -662,6 +748,65 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
             return str(offspring_docked_file)
 
         logger.info(f"子代格式化完成: 共 {offspring_count} 个独特分子准备对接。")
+
+        # 2.1 合并级别的顶补：确保合并后达到 target_total = crossover_target + mutation_target
+        try:
+            target_cross = int(self.config.get('crossover_finetune', {}).get('crossover_attempts', 50))
+        except Exception:
+            target_cross = 50
+        try:
+            target_mut = int(self.config.get('mutation_finetune', {}).get('mutation_attempts', 50))
+        except Exception:
+            target_mut = 50
+        target_total = max(0, target_cross) + max(0, target_mut)
+
+        if offspring_count < target_total:
+            logger.info(f"第 {generation} 代: 合并后独特子代 {offspring_count} < 目标 {target_total}，开始合并级别顶补(使用变异)...")
+            # 使用 GA 输入池进行额外变异，补齐到目标数量
+            ga_input_pool_file = gen_dir / "ga_input_pool.smi"
+            max_rounds = 6
+            for ridx in range(1, max_rounds + 1):
+                tmp_raw = gen_dir / f"mutation_raw_topup_combined_{ridx}.smi"
+                tmp_filtered = gen_dir / f"mutation_filtered_topup_combined_{ridx}.smi"
+                if not self._execute_ga_stage(
+                    "突变(合并顶补)", 'operations/mutation/mutation_demo_finetune.py',
+                    str(ga_input_pool_file), str(tmp_raw), str(tmp_filtered)
+                ):
+                    logger.warning(f"第 {generation} 代: 合并顶补(变异) 第{ridx}轮失败，继续尝试下一轮。")
+                    continue
+                # 将新增分子合入 offspring_formatted_file 并去重截断
+                try:
+                    seen = set()
+                    merged = []
+                    # 先读已有 offspring_formatted
+                    with open(offspring_formatted_file, 'r') as f:
+                        for line in f:
+                            s = line.strip()
+                            if not s:
+                                continue
+                            if s not in seen:
+                                seen.add(s)
+                                merged.append(s)
+                    # 加入新 topup 结果
+                    with open(tmp_filtered, 'r') as f:
+                        for line in f:
+                            s = line.strip()
+                            if not s:
+                                continue
+                            if s not in seen:
+                                seen.add(s)
+                                merged.append(s)
+                    # 截断到目标总数
+                    if len(merged) > target_total:
+                        merged = merged[:target_total]
+                    with open(offspring_formatted_file, 'w') as f:
+                        f.write("\n".join(merged) + ("\n" if merged else ""))
+                except Exception as _e:
+                    logger.warning(f"合并级别顶补合并失败: {_e}")
+                offspring_count = self._count_molecules(str(offspring_formatted_file))
+                logger.info(f"第 {generation} 代: 合并顶补后子代分子数={offspring_count}")
+                if offspring_count >= target_total:
+                    break
 
         # 3. 对子代进行对接
         offspring_docked_file = gen_dir / "offspring_docked.smi"
@@ -800,6 +945,74 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
         else:
             logger.warning(f"第 {generation} 代: 精英种群评分分析失败，但不影响主流程")            
         return scoring_succeeded
+
+    def _update_generation_summaries(self, selected_parents_file: str, generation: int) -> None:
+        """记录本代的综合指标最佳与对接分数最佳分子到 summaries 目录。"""
+        try:
+            import csv
+            out_dir = self.output_dir / 'summaries'
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            by_rag = out_dir / 'best_by_rag.csv'
+            by_ds = out_dir / 'best_by_docking.csv'
+
+            best_rag = None  # (smi, ds, qed, sa, y)
+            best_ds = None
+            with open(selected_parents_file, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) < 2:
+                        continue
+                    smi = parts[0]
+                    try:
+                        ds = float(parts[1])
+                    except Exception:
+                        continue
+                    # 尝试读取 QED/SA/RAG_Y（列 3/4/5），若缺失则跳过 RAG 排序
+                    qed = None
+                    sa = None
+                    y = None
+                    try:
+                        if len(parts) >= 3 and parts[2] != 'NA':
+                            qed = float(parts[2])
+                        if len(parts) >= 4 and parts[3] != 'NA':
+                            sa = float(parts[3])
+                        if len(parts) >= 5 and parts[4] != 'NA':
+                            y = float(parts[4])
+                    except Exception:
+                        pass
+
+                    if best_ds is None or ds < best_ds[1]:
+                        best_ds = (smi, ds, qed, sa, y)
+                    if y is not None:
+                        if best_rag is None or y > best_rag[4]:
+                            best_rag = (smi, ds, qed, sa, y)
+
+            # 写入 CSV
+            def _append(path, row, header):
+                exists = path.exists()
+                with open(path, 'a', newline='') as cf:
+                    w = csv.writer(cf)
+                    if not exists:
+                        w.writerow(header)
+                    w.writerow(row)
+
+            if best_rag is not None:
+                _append(by_rag,
+                        [generation, best_rag[0], f"{best_rag[1]:.6f}",
+                         "NA" if best_rag[2] is None else f"{best_rag[2]:.6f}",
+                         "NA" if best_rag[3] is None else f"{best_rag[3]:.6f}",
+                         f"{best_rag[4]:.6f}"],
+                        ["generation", "smiles", "docking_score", "qed", "sa", "rag_y"])            
+            if best_ds is not None:
+                _append(by_ds,
+                        [generation, best_ds[0], f"{best_ds[1]:.6f}",
+                         "NA" if best_ds[2] is None else f"{best_ds[2]:.6f}",
+                         "NA" if best_ds[3] is None else f"{best_ds[3]:.6f}",
+                         "NA" if best_ds[4] is None else f"{best_ds[4]:.6f}"],
+                        ["generation", "smiles", "docking_score", "qed", "sa", "rag_y"])            
+        except Exception as e:
+            logger.warning(f"写 summaries 失败: {e}")
 
     def run_complete_workflow(self):
         """
@@ -944,6 +1157,8 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
 
             # 7. 对选择后的精英种群进行评分分析（这是新的逻辑）
             self.run_selected_population_evaluation(next_parents_docked_file, generation)
+            # 7.1 记录本代最佳摘要
+            self._update_generation_summaries(next_parents_docked_file, generation)
 
             # 8. 清理临时文件（如果启用）
             self._cleanup_generation_files(generation)

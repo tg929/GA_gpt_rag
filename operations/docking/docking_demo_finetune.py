@@ -96,6 +96,15 @@ def vina_dock_single(ligand_file, receptor_pdbqt, results_dir, vars):
         "--out", out_file,
         "--log", log_file
     ]
+    # 若使用 Vina，可传入 --cpu 与外层并行对齐；QuickVina2 不支持该flag
+    try:
+        exe_name = os.path.basename(vars["docking_executable"]).lower()
+        if 'vina' in exe_name and 'qvina' not in exe_name:
+            ncpu = vars.get('number_of_processors')
+            if ncpu and int(ncpu) > 0:
+                cmd.extend(["--cpu", str(int(ncpu))])
+    except Exception:
+        pass
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
         score = extract_vina_score_from_pdbqt(out_file)
@@ -709,6 +718,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
