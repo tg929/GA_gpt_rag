@@ -1,0 +1,6 @@
+receptor,count,mean_best_docking_score,variance_best_docking_score
+5ht1b,16,-13.043750,0.297461
+braf,16,-12.212500,0.187344
+fa7,24,-10.104167,0.178733
+jak2,16,-11.650000,0.303750
+parp1,24,-12.783333,0.262222

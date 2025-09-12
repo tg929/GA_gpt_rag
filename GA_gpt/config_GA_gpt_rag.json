@@ -58,29 +58,8 @@
   },
   "receptors": {
     "description": "受体配置，支持多个对接目标 - 基于docking_utils.py中定义的五种蛋白",
-    "default_receptor": {
-      "name": "parp1",
-      "description": "PARP1 receptor for drug discovery",
-      "file": "tutorial/parp1.pdbqt",
-      "center_x": 26.413,
-      "center_y": 11.282,
-      "center_z": 27.238,
-      "size_x": 18.521,
-      "size_y": 17.479,
-      "size_z": 19.995
-    },
+    
     "target_list": {
-      "fa7": {
-        "name": "fa7",
-        "description": "FA7 receptor",
-        "file": "tutorial/fa7.pdbqt",
-        "center_x": 10.131,
-        "center_y": 41.879,
-        "center_z": 32.097,
-        "size_x": 20.673,
-        "size_y": 20.198,
-        "size_z": 21.362
-      },
       "parp1": {
         "name": "parp1",
         "description": "PARP1 receptor",
@@ -92,6 +71,18 @@
         "size_y": 17.479,
         "size_z": 19.995
       },
+      "fa7": {
+        "name": "fa7",
+        "description": "FA7 receptor",
+        "file": "tutorial/fa7.pdbqt",
+        "center_x": 10.131,
+        "center_y": 41.879,
+        "center_z": 32.097,
+        "size_x": 20.673,
+        "size_y": 20.198,
+        "size_z": 21.362
+      },
+      
       "5ht1b": {
         "name": "5ht1b",
         "description": "5HT1B receptor",
@@ -103,17 +94,6 @@
         "size_y": 22.5,
         "size_z": 22.5
       },
-      "jak2": {
-        "name": "jak2",
-        "description": "JAK2 receptor",
-        "file": "tutorial/jak2.pdbqt",
-        "center_x": 114.758,
-        "center_y": 65.496,
-        "center_z": 11.345,
-        "size_x": 19.033,
-        "size_y": 17.929,
-        "size_z": 20.283
-      },
       "braf": {
         "name": "braf",
         "description": "BRAF receptor",
@@ -124,7 +104,19 @@
         "size_x": 22.032,
         "size_y": 19.211,
         "size_z": 14.106
+      },
+      "jak2": {
+        "name": "jak2",
+        "description": "JAK2 receptor",
+        "file": "tutorial/jak2.pdbqt",
+        "center_x": 114.758,
+        "center_y": 65.496,
+        "center_z": 11.345,
+        "size_x": 19.033,
+        "size_y": 17.929,
+        "size_z": 20.283
       }
+      
     }
   },
   "docking": {
