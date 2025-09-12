@@ -156,11 +156,15 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
             self.output_dir = base_output_dir / self.receptor_name
             self.run_params['receptor_name'] = self.receptor_name
         else:
-            # 如果没有指定受体，使用默认或创建一个通用运行目录
-            default_receptor_info = self.config.get('receptors', {}).get('default_receptor', {})
-            default_receptor_name = default_receptor_info.get('name', 'default_run')
-            self.output_dir = base_output_dir / default_receptor_name
-            self.run_params['receptor_name'] = default_receptor_name
+            # 无 default_receptor 依赖：若 target_list 存在，使用第一个受体名；否则使用通用名
+            target_list = self.config.get('receptors', {}).get('target_list', {})
+            if isinstance(target_list, dict) and len(target_list) > 0:
+                first_receptor_name = next(iter(target_list.keys()))
+                self.output_dir = base_output_dir / first_receptor_name
+                self.run_params['receptor_name'] = first_receptor_name
+            else:
+                self.output_dir = base_output_dir / 'run'
+                self.run_params['receptor_name'] = 'run'
         self.run_params['run_specific_output_dir'] = str(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         # 加载GA和GPT的核心参数

@@ -119,31 +119,22 @@ class ConfigSnapshotGenerator:
     def _process_receptor_config(self):
         """处理受体配置"""
         receptors_config = self.original_config.get("receptors", {})
-        if receptors_config:
-            # 只保存实际使用的受体信息
-            used_receptor_config = {
-                "description": "当次运行实际使用的受体配置"
-            }
-            
-            receptor_name = self.execution_context.get("receptor_name")
-            if receptor_name and receptor_name != "default_receptor":
-                # 使用了特定受体
-                target_list = receptors_config.get("target_list", {})
-                if receptor_name in target_list:
-                    used_receptor_config["used_receptor"] = {
-                        "name": receptor_name,
-                        **target_list[receptor_name]
-                    }
+        if not receptors_config:
+            return
+        # 只保存当次运行实际使用的受体（不再区分 default_receptor）
+        used_receptor_config = {"description": "当次运行实际使用的受体配置"}
+        receptor_name = self.execution_context.get("receptor_name")
+        target_list = receptors_config.get("target_list", {})
+        if receptor_name:
+            if isinstance(target_list, dict) and receptor_name in target_list:
+                used_receptor_config["used_receptor"] = {"name": receptor_name, **target_list[receptor_name]}
             else:
-                # 使用了默认受体
-                default_receptor = receptors_config.get("default_receptor")
-                if default_receptor:
-                    used_receptor_config["used_receptor"] = {
-                        "name": "default_receptor",
-                        **default_receptor
-                    }
-            
-            self.used_config["receptors"] = used_receptor_config
+                used_receptor_config["used_receptor"] = {"name": receptor_name}
+        else:
+            if isinstance(target_list, dict) and len(target_list) > 0:
+                first_name, first_conf = next(iter(target_list.items()))
+                used_receptor_config["used_receptor"] = {"name": first_name, **first_conf}
+        self.used_config["receptors"] = used_receptor_config
     
     def _process_selection_config(self):
         """处理选择策略配置（核心功能：根据实际模式过滤）"""

@@ -385,10 +385,23 @@ class DockingWorkflow:
         """       
         receptors_config = config.get('receptors', {})
         receptor_info = receptors_config.get('default_receptor')
-        
+        # 若未提供 default_receptor，则尝试使用 target_list 中的第一个；如果也没有，则等待后续 set_receptor()
         if not receptor_info or not isinstance(receptor_info, dict):
-            raise ValueError("配置文件中未找到有效的 'default_receptor' 对象。")
-            
+            target_list = receptors_config.get('target_list', {})
+            if isinstance(target_list, dict) and len(target_list) > 0:
+                # 选取第一个受体作为默认
+                receptor_info = next(iter(target_list.values()))
+                logging.getLogger(__name__).info(
+                    "未提供 default_receptor，回退使用 target_list 中的第一个受体: %s",
+                    receptor_info.get('name', 'unknown')
+                )
+            else:
+                # 不抛异常，等外部调用 set_receptor 设置具体受体
+                logging.getLogger(__name__).warning(
+                    "未提供 default_receptor，且 target_list 为空；将等待后续 set_receptor 设置受体信息。"
+                )
+                return
+
         print(f"使用默认受体: {receptor_info.get('name', 'N/A')} ({receptor_info.get('description', 'No description')})")
         
         # 设置受体相关参数
@@ -632,13 +645,23 @@ def run_molecular_docking(config: Dict, ligands_file: str, generation_dir: str, 
         # 实例化工作流，并传入配体文件路径
         workflow = DockingWorkflow(config, generation_dir, ligands_file)
         
-        # 如果指定了受体，则切换到该受体
-        if receptor_name:
-            try:
+        # 若未显式指定受体，则尝试使用 target_list 的第一个，避免对 default_receptor 的硬依赖
+        try:
+            if receptor_name:
                 workflow.set_receptor(receptor_name, config)
-            except ValueError as e:
-                logger.error(f"无法设置受体 '{receptor_name}': {e}")
-                return None
+            else:
+                receptors_cfg = config.get('receptors', {})
+                target_list = receptors_cfg.get('target_list', {})
+                if isinstance(target_list, dict) and len(target_list) > 0:
+                    first_receptor = next(iter(target_list.keys()))
+                    workflow.set_receptor(first_receptor, config)
+                    logger.info(f"未指定受体参数，已回退使用 target_list 的第一个受体: {first_receptor}")
+                else:
+                    logger.error("未指定受体，且配置中无可用 target_list；无法继续对接。")
+                    return None
+        except ValueError as e:
+            logger.error(f"设置受体时出错: {e}")
+            return None
 
         # 1. 准备受体
         receptor_pdbqt = workflow.prepare_receptor()
@@ -718,5 +741,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

@@ -54,9 +54,17 @@ class GAWorkflowExecutor:
             logger.info(f"将为受体 '{self.receptor_name}' 在指定目录中创建输出。")
             self.run_params['receptor_name'] = self.receptor_name
         else:
-            self.output_dir = base_output_dir / "default_receptor_run"
-            logger.info("未指定受体，将在默认目录中创建输出。")
-            self.run_params['receptor_name'] = "default_receptor"        
+            # 无 default_receptor 依赖：优先使用 target_list 的第一个受体名，否则使用通用名
+            target_list = self.config.get('receptors', {}).get('target_list', {})
+            if isinstance(target_list, dict) and len(target_list) > 0:
+                first_receptor_name = next(iter(target_list.keys()))
+                self.output_dir = base_output_dir / first_receptor_name
+                logger.info(f"未指定受体，使用 target_list 的第一个受体: {first_receptor_name}")
+                self.run_params['receptor_name'] = first_receptor_name
+            else:
+                self.output_dir = base_output_dir / "run"
+                logger.info("未指定受体，且未提供 target_list；使用通用输出目录 'run'")
+                self.run_params['receptor_name'] = "run"        
         self.run_params['run_specific_output_dir'] = str(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         # 4. 记录其他GA核心参数
