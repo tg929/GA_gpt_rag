@@ -1,5 +1,5 @@
 metric,fraction,count,mean_best_docking_score
-ALL,,465,-11.436559
+ALL,,465,-11.439140
 TOP_20,0.20,93,-13.170968
 TOP_10,0.10,47,-13.444681
 TOP_05,0.05,24,-13.704167

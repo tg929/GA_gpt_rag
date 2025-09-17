@@ -3,7 +3,7 @@ receptor,metric,fraction,count,mean_best_docking_score
 5ht1b,TOP_20,0.20,19,-13.542105
 5ht1b,TOP_10,0.10,10,-13.790000
 5ht1b,TOP_05,0.05,5,-13.960000
-braf,ALL,,90,-11.682222
+braf,ALL,,90,-11.695556
 braf,TOP_20,0.20,18,-12.761111
 braf,TOP_10,0.10,9,-12.955556
 braf,TOP_05,0.05,5,-13.120000

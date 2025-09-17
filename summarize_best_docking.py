@@ -188,11 +188,11 @@ def main():
                 str(item['path'].relative_to(project_root))
             ))
 
-    # 写入逐实验明细CSV（按 docking_score 升序排序）
+    # 写入逐实验明细CSV（按受体分组，并在组内按 docking_score 升序排序）
     out_csv = project_root / args.output_file
     try:
         import csv
-        # 收集所有记录，随后统一按 score 排序
+        # 收集所有记录（后续既用于分组写出，也可被Top统计复用）
         records = []
         for receptor in best.keys():
             for exp_name, item in best[receptor].items():
@@ -207,24 +207,26 @@ def main():
                     'file': str(item['path'].relative_to(project_root))
                 })
 
-        # 按 docking_score 从小到大排序（越小越好）
-        records.sort(key=lambda r: r['score'])
-
         with out_csv.open('w', newline='', encoding='utf-8') as cf:
             w = csv.writer(cf)
             w.writerow(['receptor', 'experiment', 'best_docking_score', 'qed', 'sa', 'smiles', 'generation', 'file'])
-            for r in records:
-                w.writerow([
-                    r['receptor'],
-                    r['experiment'],
-                    f"{r['score']:.6f}",
-                    'NA' if r['qed'] is None else f"{r['qed']:.6f}",
-                    'NA' if r['sa'] is None else f"{r['sa']:.6f}",
-                    r['smiles'],
-                    r['generation'],
-                    r['file']
-                ])
-        print(f"\n已写入CSV(按docking_score排序): {out_csv}")
+            # 受体有序遍历；在每个受体内部按 score 升序
+            for receptor in sorted(best.keys()):
+                # 组内排序
+                group = [r for r in records if r['receptor'] == receptor]
+                group.sort(key=lambda r: r['score'])
+                for r in group:
+                    w.writerow([
+                        r['receptor'],
+                        r['experiment'],
+                        f"{r['score']:.6f}",
+                        'NA' if r['qed'] is None else f"{r['qed']:.6f}",
+                        'NA' if r['sa'] is None else f"{r['sa']:.6f}",
+                        r['smiles'],
+                        r['generation'],
+                        r['file']
+                    ])
+        print(f"\n已写入CSV(按受体分组且组内按docking_score排序): {out_csv}")
     except Exception as e:
         print(f"写入CSV失败: {e}")
 
