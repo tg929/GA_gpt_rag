@@ -188,27 +188,43 @@ def main():
                 str(item['path'].relative_to(project_root))
             ))
 
-    # 写入逐实验明细CSV
+    # 写入逐实验明细CSV（按 docking_score 升序排序）
     out_csv = project_root / args.output_file
     try:
         import csv
+        # 收集所有记录，随后统一按 score 排序
+        records = []
+        for receptor in best.keys():
+            for exp_name, item in best[receptor].items():
+                records.append({
+                    'receptor': receptor,
+                    'experiment': exp_name,
+                    'score': float(item['score']),
+                    'qed': item.get('qed'),
+                    'sa': item.get('sa'),
+                    'smiles': item['smiles'],
+                    'generation': item['generation'],
+                    'file': str(item['path'].relative_to(project_root))
+                })
+
+        # 按 docking_score 从小到大排序（越小越好）
+        records.sort(key=lambda r: r['score'])
+
         with out_csv.open('w', newline='', encoding='utf-8') as cf:
             w = csv.writer(cf)
             w.writerow(['receptor', 'experiment', 'best_docking_score', 'qed', 'sa', 'smiles', 'generation', 'file'])
-            for receptor in sorted(best.keys()):
-                for exp_name in sorted(best[receptor].keys()):
-                    item = best[receptor][exp_name]
-                    w.writerow([
-                        receptor,
-                        exp_name,
-                        f"{item['score']:.6f}",
-                        'NA' if item['qed'] is None else f"{item['qed']:.6f}",
-                        'NA' if item['sa'] is None else f"{item['sa']:.6f}",
-                        item['smiles'],
-                        item['generation'],
-                        str(item['path'].relative_to(project_root))
-                    ])
-        print(f"\n已写入CSV: {out_csv}")
+            for r in records:
+                w.writerow([
+                    r['receptor'],
+                    r['experiment'],
+                    f"{r['score']:.6f}",
+                    'NA' if r['qed'] is None else f"{r['qed']:.6f}",
+                    'NA' if r['sa'] is None else f"{r['sa']:.6f}",
+                    r['smiles'],
+                    r['generation'],
+                    r['file']
+                ])
+        print(f"\n已写入CSV(按docking_score排序): {out_csv}")
     except Exception as e:
         print(f"写入CSV失败: {e}")
 
@@ -239,6 +255,78 @@ def main():
                 print(f"- 受体: {receptor} | n={count} | 均值: {mean_val:.6f} | 方差: {var_val:.6f}")
     except Exception as e:
         print(f"计算/写入受体聚合统计失败: {e}")
+
+    # 计算全局 top 20% / 10% / 5% 的 docking_score 均值
+    try:
+        import math
+        # 若上面 CSV 写入阶段已构建 records 列表，则复用；否则重建
+        if 'records' not in locals():
+            records = []
+            for receptor in best.keys():
+                for exp_name, item in best[receptor].items():
+                    records.append({'score': float(item['score'])})
+
+        scores_all = sorted([float(r['score']) for r in records])
+        n_all = len(scores_all)
+        if n_all > 0:
+            overall_mean = statistics.mean(scores_all)
+            # 百分段：向上取整，至少一个样本
+            fracs = [(0.20, 'TOP_20'), (0.10, 'TOP_10'), (0.05, 'TOP_05')]
+            top_rows = []
+            print("\n全局Docking Score统计：")
+            print(f"- 全部样本: n={n_all} | 均值: {overall_mean:.6f}")
+            for frac, name in fracs:
+                k = max(1, math.ceil(n_all * frac))
+                top_scores = scores_all[:k]
+                top_mean = statistics.mean(top_scores)
+                top_rows.append((name, frac, k, top_mean))
+                print(f"- {name}: 前{int(frac*100)}% | n={k} | 均值: {top_mean:.6f}")
+
+            # 另存为独立CSV，避免污染按受体聚合文件
+            top_stats_csv = project_root / 'best_docking_top_stats.csv'
+            with top_stats_csv.open('w', newline='', encoding='utf-8') as tf:
+                import csv as _csv
+                w = _csv.writer(tf)
+                w.writerow(['metric', 'fraction', 'count', 'mean_best_docking_score'])
+                w.writerow(['ALL', '', n_all, f"{overall_mean:.6f}"])
+                for name, frac, k, m in top_rows:
+                    w.writerow([name, f"{frac:.2f}", k, f"{m:.6f}"])
+            print(f"已写入全局Top统计CSV: {top_stats_csv}")
+    except Exception as e:
+        print(f"计算/写入全局Top统计失败: {e}")
+
+    # 计算分受体的 top 20% / 10% / 5% 的 docking_score 均值
+    try:
+        import math as _math
+        fracs = [(0.20, 'TOP_20'), (0.10, 'TOP_10'), (0.05, 'TOP_05')]
+        rows = []
+        print("\n按受体Docking Score Top统计：")
+        for receptor in sorted(best.keys()):
+            scores = sorted(float(best[receptor][exp]['score']) for exp in best[receptor].keys())
+            n = len(scores)
+            if n == 0:
+                continue
+            mean_all = statistics.mean(scores)
+            print(f"受体: {receptor} | 全部 n={n} | 均值: {mean_all:.6f}")
+            rows.append([receptor, 'ALL', '', n, f"{mean_all:.6f}"])
+            for frac, name in fracs:
+                k = max(1, _math.ceil(n * frac))
+                top_scores = scores[:k]
+                top_mean = statistics.mean(top_scores)
+                print(f"  - {name}: 前{int(frac*100)}% | n={k} | 均值: {top_mean:.6f}")
+                rows.append([receptor, name, f"{frac:.2f}", k, f"{top_mean:.6f}"])
+
+        if rows:
+            per_rec_csv = project_root / 'best_docking_top_stats_by_receptor.csv'
+            with per_rec_csv.open('w', newline='', encoding='utf-8') as f:
+                import csv as _csv
+                w = _csv.writer(f)
+                w.writerow(['receptor', 'metric', 'fraction', 'count', 'mean_best_docking_score'])
+                for row in rows:
+                    w.writerow(row)
+            print(f"已写入分受体Top统计CSV: {per_rec_csv}")
+    except Exception as e:
+        print(f"计算/写入分受体Top统计失败: {e}")
 
     # 可选写入可读文本摘要
     if args.output_txt:
