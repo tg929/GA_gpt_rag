@@ -10,3 +10,4 @@ run_mcts*
 *.pt
 fragment_GPT/*
 .git_bak*/*
+*.csv

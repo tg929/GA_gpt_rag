@@ -16,6 +16,7 @@
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import argparse
+import re
 from rdkit import Chem  # type: ignore
 from rdkit.Chem import QED  # type: ignore
 # 统计模块(带兜底)
@@ -86,11 +87,14 @@ def read_top1_score_from_final_scored(file_path: Path) -> Optional[Tuple[str, fl
 
 
 def main():
-    ap = argparse.ArgumentParser(description='统计各受体在迭代过程中的最佳(最小)对接分数')
+    ap = argparse.ArgumentParser(description='统计各受体在迭代过程中的最佳(最小)对接分数（仅纳入完成设定迭代次数的实验）')
     ap.add_argument('--output_root', type=str, default='output_runs', help='输出根目录(相对项目根目录)')
     ap.add_argument('--output_file', type=str, default='best_docking_summary.csv', help='汇总CSV输出文件(相对项目根目录)')
-    ap.add_argument('--output_txt', type=str, default=None, help='可选: 额外写入可读文本摘要文件(相对项目根目录)')
-    ap.add_argument('--stats_file', type=str, default='best_docking_stats.csv', help='按受体聚合(均值/方差)CSV(相对项目根目录)')
+    #ap.add_argument('--output_txt', type=str, default=None, help='可选: 额外写入可读文本摘要文件(相对项目根目录)')
+    #ap.add_argument('--stats_file', type=str, default='best_docking_stats.csv', help='按受体聚合(均值/方差)CSV(相对项目根目录)')
+    # 新的完整性判定：显式指定起止代号（含端点）。按你的实验默认 0..10。
+    ap.add_argument('--complete_start', type=int, default=0, help='完整性判定的起始代编号（含）')
+    ap.add_argument('--complete_end', type=int, default=10, help='完整性判定的结束代编号（含）')
     args = ap.parse_args()
 
     project_root = Path(__file__).resolve().parent
@@ -118,20 +122,50 @@ def main():
             if receptor in {'.git', 'logs', 'summaries'}:
                 continue
 
-            # 在当前实验内按受体统计历代最佳
-            per_exp_best: Optional[Dict] = None
-            for gen_dir in sorted(receptor_dir.glob('generation_*')):
-                if not gen_dir.is_dir():
+            # 收集该受体的所有代目录及其编号
+            gen_map: Dict[int, Path] = {}
+            pat = re.compile(r'^generation_(\d+)$')
+            for gen_dir in (p for p in receptor_dir.iterdir() if p.is_dir()):
+                m = pat.match(gen_dir.name)
+                if not m:
                     continue
-                final_scored = gen_dir / 'docking_results' / 'final_scored.smi'
+                try:
+                    idx = int(m.group(1))
+                except Exception:
+                    continue
+                gen_map[idx] = gen_dir
+
+            # 判定是否为“完整实验”：检查 complete_start..complete_end（含端点）是否全部存在且可读取
+            start = int(args.complete_start)
+            end = int(args.complete_end)
+            ok = True
+            for g in range(start, end + 1):
+                gd = gen_map.get(g)
+                if gd is None:
+                    ok = False
+                    break
+                fp = gd / 'docking_results' / 'final_scored.smi'
                 scanned_files += 1
+                if read_top1_score_from_final_scored(fp) is None:
+                    ok = False
+                    break
+
+            # 若未完整，则跳过该实验-受体
+            if not ok:
+                continue
+
+            # 在完整的代序列范围内统计最佳
+            per_exp_best: Optional[Dict] = None
+            for g in range(start, end + 1):
+                gd = gen_map[g]
+                final_scored = gd / 'docking_results' / 'final_scored.smi'
                 res = read_top1_score_from_final_scored(final_scored)
                 if res is None:
+                    # 理论上不会发生（已在完整性检查中验证），防御性跳过
                     continue
                 smiles, score, qed, sa = res
                 found_records += 1
 
-                # 对接分数越小越好
                 if per_exp_best is None or score < per_exp_best['score']:
                     per_exp_best = {
                         'score': score,
@@ -139,7 +173,7 @@ def main():
                         'qed': qed,
                         'sa': sa,
                         'exp': exp_dir.name,
-                        'generation': gen_dir.name,
+                        'generation': f'generation_{g}',
                         'path': final_scored,
                     }
 
@@ -230,72 +264,9 @@ def main():
     except Exception as e:
         print(f"写入CSV失败: {e}")
 
-    # 计算每个受体在各实验最佳分数的均值与方差，并输出CSV
-    try:
-        receptor_stats = []
-        for receptor in sorted(best.keys()):
-            scores = [best[receptor][exp]['score'] for exp in best[receptor].keys()]
-            if not scores:
-                continue
-            mean_val = statistics.mean(scores)
-            # 使用总体方差（pvariance）；如需无偏样本方差可改为 statistics.variance
-            var_val = statistics.pvariance(scores) if len(scores) > 1 else 0.0
-            receptor_stats.append((receptor, len(scores), mean_val, var_val))
+    # 已移除：按受体聚合(均值/方差)的 stats CSV 写入逻辑
 
-        if receptor_stats:
-            stats_csv = project_root / args.stats_file
-            with stats_csv.open('w', newline='', encoding='utf-8') as sf:
-                import csv as _csv
-                w = _csv.writer(sf)
-                w.writerow(['receptor', 'count', 'mean_best_docking_score', 'variance_best_docking_score'])
-                for receptor, count, mean_val, var_val in receptor_stats:
-                    w.writerow([receptor, count, f"{mean_val:.6f}", f"{var_val:.6f}"])
-            print(f"已写入受体聚合统计CSV: {stats_csv}")
-            # 同时在控制台打印简表
-            print("\n受体聚合(均值/方差)摘要：")
-            for receptor, count, mean_val, var_val in receptor_stats:
-                print(f"- 受体: {receptor} | n={count} | 均值: {mean_val:.6f} | 方差: {var_val:.6f}")
-    except Exception as e:
-        print(f"计算/写入受体聚合统计失败: {e}")
-
-    # 计算全局 top 20% / 10% / 5% 的 docking_score 均值
-    try:
-        import math
-        # 若上面 CSV 写入阶段已构建 records 列表，则复用；否则重建
-        if 'records' not in locals():
-            records = []
-            for receptor in best.keys():
-                for exp_name, item in best[receptor].items():
-                    records.append({'score': float(item['score'])})
-
-        scores_all = sorted([float(r['score']) for r in records])
-        n_all = len(scores_all)
-        if n_all > 0:
-            overall_mean = statistics.mean(scores_all)
-            # 百分段：向上取整，至少一个样本
-            fracs = [(0.20, 'TOP_20'), (0.10, 'TOP_10'), (0.05, 'TOP_05')]
-            top_rows = []
-            print("\n全局Docking Score统计：")
-            print(f"- 全部样本: n={n_all} | 均值: {overall_mean:.6f}")
-            for frac, name in fracs:
-                k = max(1, math.ceil(n_all * frac))
-                top_scores = scores_all[:k]
-                top_mean = statistics.mean(top_scores)
-                top_rows.append((name, frac, k, top_mean))
-                print(f"- {name}: 前{int(frac*100)}% | n={k} | 均值: {top_mean:.6f}")
-
-            # 另存为独立CSV，避免污染按受体聚合文件
-            top_stats_csv = project_root / 'best_docking_top_stats.csv'
-            with top_stats_csv.open('w', newline='', encoding='utf-8') as tf:
-                import csv as _csv
-                w = _csv.writer(tf)
-                w.writerow(['metric', 'fraction', 'count', 'mean_best_docking_score'])
-                w.writerow(['ALL', '', n_all, f"{overall_mean:.6f}"])
-                for name, frac, k, m in top_rows:
-                    w.writerow([name, f"{frac:.2f}", k, f"{m:.6f}"])
-            print(f"已写入全局Top统计CSV: {top_stats_csv}")
-    except Exception as e:
-        print(f"计算/写入全局Top统计失败: {e}")
+    # 全局 Docking Score 统计与写入 CSV 已移除
 
     # 计算分受体的 top 20% / 10% / 5% 的 docking_score 均值
     try:
@@ -330,9 +301,10 @@ def main():
     except Exception as e:
         print(f"计算/写入分受体Top统计失败: {e}")
 
-    # 可选写入可读文本摘要
-    if args.output_txt:
-        out_txt = project_root / args.output_txt
+    # 可选写入可读文本摘要（鲁棒处理：参数可能被注释掉）
+    output_txt = getattr(args, 'output_txt', None)
+    if output_txt:
+        out_txt = project_root / output_txt
         try:
             lines = []
             lines.append(f"统计完成\n扫描文件数: {scanned_files}, 有效记录数: {found_records}\n")
