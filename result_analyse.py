@@ -37,7 +37,16 @@ def load_records(input_path: Path):
             try:
                 receptor = (row.get('receptor') or row.get('Receptor') or '').strip()
                 experiment = (row.get('experiment') or row.get('Experiment') or '').strip()
-                score_str = (row.get('best_docking_score') or row.get('score') or '').strip()
+                # 兼容列名：best_docking_score / docking_score / score
+                score_str = (
+                    row.get('best_docking_score')
+                    or row.get('docking_score')
+                    or row.get('score')
+                    or row.get('DockingScore')
+                    or row.get('Docking_Score')
+                    or ''
+                )
+                score_str = score_str.strip()
                 if score_str == '' or receptor == '':
                     continue
                 score = float(score_str)
@@ -113,8 +122,11 @@ def compute_stats_per_receptor(selected, receptors, fractions=(0.20, 0.10, 0.05,
         frac_stats = []
         for frac in fractions:
             k = max(1, math.ceil(n * frac))
-            m = statistics.mean(scores[:k])
-            frac_stats.append((frac, k, m))
+            sub = scores[:k]
+            m = statistics.mean(sub)
+            # 使用总体方差（pvariance），与 summarize 脚本保持一致
+            v = statistics.pvariance(sub) if k > 1 else 0.0
+            frac_stats.append((frac, k, m, v))
             pct = int(frac * 100)
             print(f"  · 前{pct:>2}% | n={k:>3} | 均值: {m:.6f}")
         # 按预设顺序提取 20/10/5/3
@@ -123,10 +135,14 @@ def compute_stats_per_receptor(selected, receptors, fractions=(0.20, 0.10, 0.05,
             rec,
             n,
             f"{mean_all:.6f}",
-            frac_stats[0][1], f"{frac_stats[0][2]:.6f}",  # 20%
-            frac_stats[1][1], f"{frac_stats[1][2]:.6f}",  # 10%
-            frac_stats[2][1], f"{frac_stats[2][2]:.6f}",  # 5%
-            frac_stats[3][1], f"{frac_stats[3][2]:.6f}",  # 3%
+            # 20%
+            frac_stats[0][1], f"{frac_stats[0][2]:.6f}", f"{frac_stats[0][3]:.6f}",
+            # 10%
+            frac_stats[1][1], f"{frac_stats[1][2]:.6f}", f"{frac_stats[1][3]:.6f}",
+            # 5%
+            frac_stats[2][1], f"{frac_stats[2][2]:.6f}", f"{frac_stats[2][3]:.6f}",
+            # 3%（仍仅均值，不强制要求方差，可视需要添加）
+            frac_stats[3][1], f"{frac_stats[3][2]:.6f}",
         ])
     return rows
 
@@ -137,9 +153,9 @@ def write_stats(rows, stats_path: Path):
         w = csv.writer(f)
         w.writerow([
             'receptor', 'count_selected', 'mean_300',
-            'top20_count', 'top20_mean',
-            'top10_count', 'top10_mean',
-            'top05_count', 'top05_mean',
+            'top20_count', 'top20_mean', 'top20_var',
+            'top10_count', 'top10_mean', 'top10_var',
+            'top05_count', 'top05_mean', 'top05_var',
             'top03_count', 'top03_mean',
         ])
         for row in rows:
