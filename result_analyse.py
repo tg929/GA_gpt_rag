@@ -106,7 +106,7 @@ def write_selected(selected, output_path: Path):
             ])
 
 
-def compute_stats_per_receptor(selected, receptors, fractions=(0.20, 0.10, 0.05, 0.03)):
+def compute_stats_per_receptor(selected, receptors, fractions=(0.50, 0.20, 0.10, 0.05, 0.03)):
     """对选中的记录按受体计算均值与Top分段均值。返回用于写CSV的行。"""
     rows = []
     print("按受体统计(基于各自前N条)：")
@@ -129,20 +129,22 @@ def compute_stats_per_receptor(selected, receptors, fractions=(0.20, 0.10, 0.05,
             frac_stats.append((frac, k, m, v))
             pct = int(frac * 100)
             print(f"  · 前{pct:>2}% | n={k:>3} | 均值: {m:.6f}")
-        # 按预设顺序提取 20/10/5/3
+        # 按预设顺序提取 50/20/10/5/3
         # 若 fractions 变动，下面顺序也需一并调整
         rows.append([
             rec,
             n,
             f"{mean_all:.6f}",
+            # 50%（仅均值）
+            frac_stats[0][1], f"{frac_stats[0][2]:.6f}",
             # 20%
-            frac_stats[0][1], f"{frac_stats[0][2]:.6f}", f"{frac_stats[0][3]:.6f}",
-            # 10%
             frac_stats[1][1], f"{frac_stats[1][2]:.6f}", f"{frac_stats[1][3]:.6f}",
-            # 5%
+            # 10%
             frac_stats[2][1], f"{frac_stats[2][2]:.6f}", f"{frac_stats[2][3]:.6f}",
+            # 5%
+            frac_stats[3][1], f"{frac_stats[3][2]:.6f}", f"{frac_stats[3][3]:.6f}",
             # 3%（仍仅均值，不强制要求方差，可视需要添加）
-            frac_stats[3][1], f"{frac_stats[3][2]:.6f}",
+            frac_stats[4][1], f"{frac_stats[4][2]:.6f}",
         ])
     return rows
 
@@ -153,6 +155,7 @@ def write_stats(rows, stats_path: Path):
         w = csv.writer(f)
         w.writerow([
             'receptor', 'count_selected', 'mean_300',
+            'top50_count', 'top50_mean',
             'top20_count', 'top20_mean', 'top20_var',
             'top10_count', 'top10_mean', 'top10_var',
             'top05_count', 'top05_mean', 'top05_var',
