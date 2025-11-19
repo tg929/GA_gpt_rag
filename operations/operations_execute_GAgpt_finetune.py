@@ -36,15 +36,14 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent #Path(__file__).resolve()：当前脚本目录/地址/data1/ytg/medium_models/GA_gpt/operations/operations_execute_GAgpt_demo.py  .resolve()：将相对路径转换为绝对路径 
-                                                             #整个项目地址：/data1/ytg/medium_models/GA_gpt
-sys.path.insert(0, str(PROJECT_ROOT))#0：添加目录到搜索列表最前面
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent 
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
-class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调用这个类
+class GAGPTWorkflowExecutor:   
     def __init__(self, config_path: str, receptor_name: Optional[str] = None, output_dir_override: Optional[str] = None, num_processors_override: Optional[int] = None):
         """
-        初始化GA-GPT工作流执行器。        
+        初始化FragEvo工作流执行器。        
         Args:
             config_path (str): 配置文件路径。
             receptor_name (Optional[str]): 目标受体名称。如果为None, 则使用默认受体。
@@ -147,7 +146,7 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
         if output_dir_override:
             output_dir_name = output_dir_override
         else:
-            output_dir_name = workflow_config.get('output_directory', 'GA_GPT_output')
+            output_dir_name = workflow_config.get('output_directory', 'FragEvo_output')
         base_output_dir = self.project_root / output_dir_name
         self.run_params['base_output_dir'] = str(base_output_dir)
         # 根据受体确定最终运行目录
@@ -1124,7 +1123,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    parser = argparse.ArgumentParser(description='GA-GPT混合工作流执行器')
+    parser = argparse.ArgumentParser(description='FragEvo混合工作流执行器')
     parser.add_argument('--config', type=str, 
                     default='GA_gpt/config_example.json',
                     help='配置文件路径')

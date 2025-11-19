@@ -453,7 +453,7 @@ class GAWorkflowExecutor:
 def main():    
     import argparse    
     parser = argparse.ArgumentParser(description='GA完整工作流执行器 (可独立运行)')
-    parser.add_argument('--config', type=str, default='GA_gpt/config_example.json')
+    parser.add_argument('--config', type=str, default='FragEvo/config_example.json')
     parser.add_argument('--receptor', type=str, default=None, help='(可选) 要运行的目标受体名称')
     parser.add_argument('--output_dir', type=str, default=None, help='(可选) 指定输出目录，覆盖配置文件中的设置')    
     args = parser.parse_args()    

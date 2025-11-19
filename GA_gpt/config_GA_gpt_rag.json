@@ -1,12 +1,12 @@
 {
   "paths": {
-    "project_root": "/data2/ytg/paper-ieee/GA_gpt_rag"
+    "project_root": "FragEvo_rag"
     
   },
   "workflow": {
-    "output_directory": "GA_GPT_output_rag",
+    "output_directory": "FragEvo_output_rag",
     "max_generations": 10,
-    "initial_population_file": "datasets/source_compounds/my_initial_population.smi"
+    "initial_population_file": "datasets/initial_population/my_initial_population.smi"
   },
   "gpt": {
     "seed": 42,
@@ -48,7 +48,7 @@
         "qed_min": 0.5,
         "sa_max": 5.0,
         "ds_active_median": -7.5,
-        "reference_smiles_file": "datasets/source_compounds/my_initial_population.smi",
+        "reference_smiles_file": "datasets/initial_population/my_initial_population.smi",
         "fp_type": "morgan",
         "fp_radius": 2,
         "fp_nbits": 2048
@@ -193,7 +193,7 @@
   ,
   "_unused": {
     "paths": {
-      "mgltools_path": "GA_gpt/mgltools_x86_64Linux2_1.5.6"
+      "mgltools_path": "FragEvo_rag/mgltools_x86_64Linux2_1.5.6"
     },
     "filter": {
       "target_diversity": 0.7,

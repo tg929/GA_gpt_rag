@@ -33,12 +33,10 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent #Path(__file__).resolve()：当前脚本目录/地址/data1/ytg/medium_models/GA_gpt/operations/operations_execute_GAgpt_demo.py  .resolve()：将相对路径转换为绝对路径 
-                                                             #整个项目地址：/data1/ytg/medium_models/GA_gpt
-sys.path.insert(0, str(PROJECT_ROOT))#0：添加目录到搜索列表最前面
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent 
+sys.path.insert(0, str(PROJECT_ROOT))
 
-
-class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调用这个类
+class GAGPTWorkflowExecutor:   
     def __init__(self, config_path: str, receptor_name: Optional[str] = None, output_dir_override: Optional[str] = None, num_processors_override: Optional[int] = None):
         """
         初始化GA-GPT工作流执行器。        
@@ -49,8 +47,7 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
             num_processors_override (Optional[int]): 覆盖配置文件中的处理器数量。
         """
         self.config_path = config_path
-        self.config = self._load_config()        
-        # 应用处理器数量覆盖
+        self.config = self._load_config()         
         if num_processors_override is not None:#有自定义处理器数量设置
             self.config['performance']['number_of_processors'] = num_processors_override
             logger.info(f"运行时覆盖处理器数量为: {num_processors_override}")
@@ -58,10 +55,10 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
         self.run_params = {}
         self._setup_parameters_and_paths(receptor_name, output_dir_override)
         self._save_run_parameters()        
-        logger.info(f"GA-GPT工作流初始化完成, 输出目录: {self.output_dir}")
+        logger.info(f"FragEvo工作流初始化完成, 输出目录: {self.output_dir}")
         logger.info(f"最大迭代代数: {self.max_generations}")
 
-    def _load_config(self) -> dict:#加载配置文件
+    def _load_config(self) -> dict:
         with open(self.config_path, 'r', encoding='utf-8') as f:
             return json.load(f)       
 
@@ -69,24 +66,20 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
         self.project_root = Path(self.config.get('paths', {}).get('project_root', PROJECT_ROOT))
         workflow_config = self.config.get('workflow', {})
         gpt_config = self.config.get('gpt', {})
-        self.dynamic_masking_config = gpt_config.get('dynamic_masking', {'enable': False})
-        # 记录配置和根目录
+        self.dynamic_masking_config = gpt_config.get('dynamic_masking', {'enable': False})       
         self.run_params['config_file_path'] = self.config_path
-        self.run_params['project_root'] = str(self.project_root)
-        # 确定输出目录
+        self.run_params['project_root'] = str(self.project_root)        
         if output_dir_override:
             output_dir_name = output_dir_override
         else:
-            output_dir_name = workflow_config.get('output_directory', 'GA_GPT_output')
+            output_dir_name = workflow_config.get('output_directory', 'FragEvo_output')
         base_output_dir = self.project_root / output_dir_name
-        self.run_params['base_output_dir'] = str(base_output_dir)
-        # 根据受体确定最终运行目录
+        self.run_params['base_output_dir'] = str(base_output_dir)       
         self.receptor_name = receptor_name
         if self.receptor_name:
             self.output_dir = base_output_dir / self.receptor_name
             self.run_params['receptor_name'] = self.receptor_name
-        else:
-            # 无 default_receptor 依赖：若 target_list 存在，使用第一个受体名；否则使用通用名
+        else:            
             target_list = self.config.get('receptors', {}).get('target_list', {})
             if isinstance(target_list, dict) and len(target_list) > 0:
                 first_receptor_name = next(iter(target_list.keys()))
@@ -129,22 +122,21 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
         mask_count = initial_mask + progress * (final_mask - initial_mask)        
         # 四舍五入到最近的整数，并确保结果在[final_mask, initial_mask]范围内
         return int(round(max(min(mask_count, initial_mask), final_mask)))
-    def _save_run_parameters(self):
-        """保存本次运行的完整参数快照。"""
-        snapshot_file_path = self.output_dir / "execution_config_snapshot.json"
-        success = save_config_snapshot(
-            original_config=self.config,
-            execution_context=self.run_params,
-            output_file_path=str(snapshot_file_path)
-        )
-        if success:
-            logger.info(f"完整的执行配置快照已保存到: {snapshot_file_path}")
-        else:
-            logger.error("保存执行配置快照失败")
+    # def _save_run_parameters(self):
+    #     """保存本次运行的完整参数快照。"""
+    #     snapshot_file_path = self.output_dir / "execution_config_snapshot.json"
+    #     success = save_config_snapshot(
+    #         original_config=self.config,
+    #         execution_context=self.run_params,
+    #         output_file_path=str(snapshot_file_path)
+    #     )
+    #     if success:
+    #         logger.info(f"完整的执行配置快照已保存到: {snapshot_file_path}")
+    #     else:
+    #         logger.error("保存执行配置快照失败")
 
     def _run_script(self, script_path: str, args: List[str]) -> bool:
-        """
-        统一的脚本执行函数，通过流式处理输出防止死锁，并增加超时保护。
+        """   
         
         Args:
             script_path (str): 相对于项目根目录的脚本路径。
@@ -166,32 +158,26 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
                 encoding='utf-8',
                 cwd=str(self.project_root),
                 close_fds=True
-            ) as process:
-                
-                # 创建队列来从线程中接收输出
+            ) as process:               
                 q_stdout = queue.Queue()
                 q_stderr = queue.Queue()
-
-                # 创建并启动线程来实时读取输出
+               
                 thread_stdout = threading.Thread(target=self._read_stream, args=(process.stdout, q_stdout))
                 thread_stderr = threading.Thread(target=self._read_stream, args=(process.stderr, q_stderr))
                 thread_stdout.start()
                 thread_stderr.start()
-
-                # 等待进程结束，设置超时
                 try:
-                    process.wait(timeout=3600)  # 1小时超时
+                    process.wait(timeout=3600)  
                 except subprocess.TimeoutExpired:
                     logger.error(f"Script {script_path} timed out (1 hour). Terminating...")
-                    process.kill()  # 强制杀死进程
-                    # 再等待一小段时间确保线程能读取完最后的信息
+                    process.kill()  
                     thread_stdout.join(timeout=5)
                     thread_stderr.join(timeout=5)
-                    # 记录日志并返回失败
+                   
                     self._log_subprocess_output(script_path, q_stdout, q_stderr, "after timeout")
                     return False
                 
-                # 进程正常结束后，等待读取线程完成
+               
                 thread_stdout.join()
                 thread_stderr.join()
 
@@ -285,7 +271,7 @@ class GAGPTWorkflowExecutor:    #工作流；主函数/入口文件就是在调�
             return len(unique_smiles_list)
         except Exception as e:
             logger.error(f"去重过程中发生错误: {e}")
-            # 清理可能的临时文件
+           
             temp_file = output_file + f".tmp_{os.getpid()}_{int(time.time())}"
             if os.path.exists(temp_file):
                 try:
@@ -845,10 +831,10 @@ def main():
         executor = GAGPTWorkflowExecutor(args.config, args.receptor, args.output_dir)
         success = executor.run_complete_workflow()
         if not success:
-            logger.error("GA-GPT工作流执行失败。")
+            logger.error("FragEvo工作流执行失败。")
             return 1
         
-        logger.info("GA-GPT工作流成功完成!")
+        logger.info("FragEvo工作流成功完成!")
 
     except Exception as e:
         logger.critical(f"工作流执行过程中发生严重错误: {e}", exc_info=True)

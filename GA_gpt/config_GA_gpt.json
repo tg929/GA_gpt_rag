@@ -1,7 +1,7 @@
 {
-  "description": "GA-GPT混合分子生成系统专用配置文件",
+  "description": "FragEvo配置文件",
   "version": "1.0",
-  "workflow_type": "GA-GPT_guided",  
+  "workflow_type": "GA-FragMLM_guided",  
   "paths": {
     "project_root": ".",
     "description": "项目根目录路径"
@@ -9,8 +9,8 @@
   "workflow": {
     "description": "GA-GPT混合工作流核心参数",
     "max_generations": 25,
-    "initial_population_file": "datasets/source_compounds/my_initial_population.smi",
-    "output_directory": "GA_GPT_output",
+    "initial_population_file": "datasets/initial_population/my_initial_population.smi",
+    "output_directory": "FragEvo_output",
     "enable_gpt_generation": true,
     "gpt_integration_mode": "additive",
     "early_stopping_patience": 3,
