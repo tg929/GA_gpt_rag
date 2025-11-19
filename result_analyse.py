@@ -117,7 +117,8 @@ def compute_stats_per_receptor(selected, receptors, fractions=(0.50, 0.20, 0.10,
             continue
         scores.sort()
         mean_all = statistics.mean(scores)
-        print(f"- 受体: {rec} | 计入样本 n={n} | 300条均值: {mean_all:.6f}")
+        var_all = statistics.pvariance(scores) if n > 1 else 0.0
+        print(f"- 受体: {rec} | 计入样本 n={n} | 300条均值: {mean_all:.6f} | 方差: {var_all:.6f}")
         # 依次计算分段
         frac_stats = []
         for frac in fractions:
@@ -128,7 +129,7 @@ def compute_stats_per_receptor(selected, receptors, fractions=(0.50, 0.20, 0.10,
             v = statistics.pvariance(sub) if k > 1 else 0.0
             frac_stats.append((frac, k, m, v))
             pct = int(frac * 100)
-            print(f"  · 前{pct:>2}% | n={k:>3} | 均值: {m:.6f}")
+            print(f"  · 前{pct:>2}% | n={k:>3} | 均值: {m:.6f} | 方差: {v:.6f}")
         # 按预设顺序提取 50/20/10/5/3
         # 若 fractions 变动，下面顺序也需一并调整
         rows.append([
